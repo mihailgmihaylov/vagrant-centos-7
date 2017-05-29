@@ -1,0 +1,101 @@
+---
+- name: Get the uname kernel.
+  command: uname -r
+  changed_when: false
+  register: uname_release
+
+- name: Ensure necessary packages are installed.
+  yum: "name={{ item }} state=present"
+  with_items:
+    - curl
+    - wget
+    - vim
+    - net-tools
+    - cpp
+    - gcc
+    - rsync
+    - make
+    - bzip2
+    - kernel-headers
+    - kernel-devel
+    - "kernel-devel-{{ uname_release.stdout }}"
+    - libselinux-python
+    - cifs-utils
+
+- name: Add puppetlabs repo key
+  rpm_key: key=https://yum.puppetlabs.com/RPM-GPG-KEY-puppetlabs
+- name: Add puppetlabs repo
+  yum: name=https://yum.puppetlabs.com/puppetlabs-release-pc1-el-7.noarch.rpm
+- name: Install packages
+  yum: name={{ item }}
+  with_items:
+    - epel-release
+    - puppet-agent
+
+- name: Create /usr/bin/puppet links
+  file: src=/opt/puppetlabs/bin/puppet dest=/usr/bin/puppet state=link
+
+- name: Restart network service (explicitly).
+  service: name=network state=restarted
+
+# SSH daemon configuration.
+- name: Configure SSH daemon.
+  lineinfile:
+    dest: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+  with_items:
+    - { regexp: '^UseDNS', line: 'UseDNS no' }
+    - { regexp: '^GSSAPIAuthentication', line: 'GSSAPIAuthentication no' }
+
+# Vagrant SSH configuration.
+- name: Configure Vagrant .ssh directory.
+  file:
+    path: /home/vagrant/.ssh
+    state: directory
+    owner: vagrant
+    group: vagrant
+    mode: 0700
+
+- name: Get Vagrant's public key.
+  get_url:
+    url: https://github.com/mitchellh/vagrant/raw/master/keys/vagrant.pub
+    dest: /home/vagrant/.ssh/authorized_keys
+    owner: vagrant
+    group: vagrant
+    mode: 0600
+
+# VirtualBox tools installation.
+- name: Check if VirtualBox is running the guest VM.
+  stat: path=/home/vagrant/.vbox_version
+  register: virtualbox_check
+
+- include: virtualbox.yml
+  when: virtualbox_check.stat.exists
+
+# Cleanup tasks.
+- name: Remove unneeded packages.
+  yum: "name={{ item }} state=absent"
+  with_items:
+    - cpp
+    - kernel-devel
+    - kernel-headers
+
+- name: Clean up yum.
+  command: yum clean all
+
+- name: Remove any remnants of VirtualBox ISOs.
+  shell: rm -rf VBoxGuestAdditions_*.iso VBoxGuestAdditions_*.iso.?
+
+- name: Remove RedHat interface persistence (step 1).
+  shell: rm -f /etc/udev/rules.d/70-persistent-net.rules
+
+- name: Remove RedHat interface persistence (step 2).
+  lineinfile:
+    dest: /etc/sysconfig/network-scripts/ifcfg-eth0
+    regexp: "{{ item }}"
+    state: absent
+  with_items:
+    - '^HWADDR'
+    - '^UUID'
