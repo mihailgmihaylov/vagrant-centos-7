@@ -1,0 +1,102 @@
+{
+  "variables": {
+    "vbox_core": "1",
+    "vbox_memory": "512",
+    "disk_size": "10140",
+    "ssh_port": "22",
+    "ssh_wait_timeout": "10000s",
+    "centos_iso_url": "http://ftp.wrz.de/pub/CentOS/7.3.1611/isos/x86_64/CentOS-7-x86_64-Minimal-1611.iso",
+    "centos_iso_sha256": "27bd866242ee058b7a5754e83d8ee8403e216b93d130d800852a96f41c34d86a",
+    "name": "mihailgmihaylov/centos-7.3",
+    "version": "0.0.4"
+  },
+  "push": {
+    "name": "{{user `name`}}",
+    "description": "This box contains CentOS 7.3 64-bit with Puppet Agent 4.10.",
+    "versions": [
+        {
+        "version": "{{user `version`}}",
+        "providers": [
+          {
+            "name": "virtualbox"
+          }
+        ]
+      }
+    ]
+  },
+  "provisioners": [
+    {
+      "type": "shell",
+      "execute_command": "echo 'vagrant' | {{.Vars}} sudo -S -E bash '{{.Path}}'",
+      "script": "scripts/install-ansible.sh"
+    },
+    {
+      "type": "ansible-local",
+      "playbook_file": "ansible/main-centos.yml",
+      "role_paths": "ansible/roles/centos"
+    },
+    {
+      "type": "shell",
+      "execute_command": "echo 'vagrant' | {{.Vars}} sudo -S -E bash '{{.Path}}'",
+      "script": "scripts/uninstall-ansible.sh"
+    }
+  ],
+  "builders": [
+    {
+      "type": "virtualbox-iso",
+      "boot_command": [
+        "<tab> text ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks.cfg<enter><wait>"
+      ],
+      "boot_wait": "10s",
+      "disk_size": "{{user `disk_size`}}",
+      "guest_os_type": "RedHat_64",
+      "headless": true,
+      "http_directory": "http",
+      "iso_urls": [
+        "{{user `centos_iso_url`}}"
+      ],
+      "iso_checksum_type": "sha256",
+      "iso_checksum": "{{user `centos_iso_sha256`}}",
+      "ssh_username": "vagrant",
+      "ssh_password": "vagrant",
+      "ssh_port": "{{user `ssh_port`}}",
+      "ssh_wait_timeout": "{{user `ssh_wait_timeout`}}",
+      "shutdown_command": "echo 'vagrant'|sudo -S /sbin/halt -h -p",
+      "guest_additions_path": "VBoxGuestAdditions_{{.Version}}.iso",
+      "virtualbox_version_file": ".vbox_version",
+      "vm_name": "packer-centos-7-x86_64",
+      "vboxmanage": [
+        [
+          "modifyvm",
+          "{{.Name}}",
+          "--memory",
+          "{{user `vbox_memory`}}"
+        ],
+        [
+          "modifyvm",
+          "{{.Name}}",
+          "--cpus",
+          "{{user `vbox_core`}}"
+        ]
+      ]
+    }
+  ],
+  "post-processors": [
+    [{
+      "output": "builds/{{.Provider}}-centos7.box",
+      "type": "vagrant"
+    },
+    {
+      "type": "atlas",
+      "token": "{{user `atlas_token`}}",
+      "only": ["virtualbox-iso"],
+      "artifact": "{{user `name`}}",
+      "artifact_type": "vagrant.box",
+      "metadata": {
+        "provider": "virtualbox",
+        "version": "{{user `version`}}",
+        "created_at": "{{timestamp}}"
+      }
+    }]
+  ]
+}
